@@ -145,3 +145,29 @@ test("invalid redis client", function (t) {
   })
   t.end()
 })
+
+test("handles backpressure", function (t) {
+  var client = redis.createClient()
+  var c = WQ(client, {queueName: "~receipt", interval: 20, highWaterMark: 5 })
+
+  var written = 0
+  function fill(cb) {
+    // console.log('writing')
+    c.write({runAt: 0, key: "hi-" + written}, function () {
+      written++
+      if (written === 100) return cb()
+      fill(cb)
+    })
+  }
+  fill(function () {
+    c.once('readable', function () {
+      var item = c.read()
+      setTimeout(function () {
+        t.assert(c._readableState.length <= c._readableState.highWaterMark)
+        c.stop()
+        client.quit()
+        t.end()
+      }, 50)
+    })
+  })
+})
